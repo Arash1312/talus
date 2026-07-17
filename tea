@@ -21,6 +21,9 @@ const final = await kit.waitForSwap({ result, kitKey: process.env.KIT_KEY });
 const result = await kit.swap({
   from: { adapter, chain: "Arc" },
   tokenIn: "USDT",
+  from: { adapter, chain: "Ethereum" },
+  tokenIn: "USDC",
+  tokenOut: "USDC",
   tokenOut: "USDC",
   amountIn: "1.00",
   to: { recipientAddress: "0xDifferentWallet" },
