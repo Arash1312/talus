@@ -1,32 +1,54 @@
- https://tea.xyz/what-is-this-file
----
-version: 1.0.0
-codeOwners:
-  - '0x522AE30A6EAE9e8976e30C734f57aae971eecFff'
-quorum: 1
-import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
-const adapter = await createViemAdapterFromProvider({
-  provider: window.ethereum,
-});
-// Cross-chain: swap USDC on Ethereum, receive on Base at a specific wallet
-const result = await kit.swap({
-  from: { adapter, chain: "Ethereum" },
-  tokenIn: "USDC",
-  tokenIn: "USDT",
-  from: { adapter, chain: "Ethereum" },
-  tokenIn: "USDC",
-  tokenOut: "USDC",
-  tokenOut: "USDC",
-  amountIn: "100",
-  to: { chain: "Base", recipientAddress: "0xRecipient" },
-  config: { kitKey: process.env.KIT_KEY },
-});
-const final = await kit.waitForSwap({ result, kitKey: process.env.KIT_KEY });
-const result = await kit.swap({
-  from: { adapter, chain: "Arc" },
+import hashlib
+import argparse
+from pathlib import Path
 
-  tokenOut: "USDC",
-  amountIn: "1.00",
-  to: { recipientAddress: "0xDifferentWallet" },
-  config: { kitKey: process.env.KIT_KEY },
-});
+
+def hash_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def hash_file(file_path: str) -> str:
+    sha = hashlib.sha256()
+
+    with open(file_path, "rb") as f:
+        while chunk := f.read(4096):
+            sha.update(chunk)
+
+    return sha.hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="NovaHash - Fast SHA256 Hash Generator"
+    )
+
+    parser.add_argument(
+        "-t",
+        "--text",
+        help="Hash a text string"
+    )
+
+    parser.add_argument(
+        "-f",
+        "--file",
+        help="Hash a file"
+    )
+
+    args = parser.parse_args()
+
+    if args.text:
+        print(hash_text(args.text))
+    elif args.file:
+        path = Path(args.file)
+
+        if not path.exists():
+            print("Error: File not found.")
+            return
+
+        print(hash_file(str(path)))
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
