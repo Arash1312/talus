@@ -1,0 +1,255 @@
+"""
+NEXO
+A lightweight async API health monitor.
+
+Features:
+- Async HTTP checks
+- Response-time tracking
+- Automatic retry
+- Clean terminal output
+- JSON report export
+
+Requirements:
+    pip install aiohttp
+
+Run:
+    python nexo.py
+"""
+
+import asyncio
+import json
+import time
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from typing import List
+
+import aiohttp
+
+
+# ─────────────────────────────────────────────
+# Configuration
+# ─────────────────────────────────────────────
+
+TARGETS = [
+    "https://github.com",
+    "https://api.github.com",
+    "https://www.google.com",
+]
+
+TIMEOUT = 10
+RETRIES = 2
+REPORT_FILE = "nexo_report.json"
+
+
+# ─────────────────────────────────────────────
+# Data Model
+# ─────────────────────────────────────────────
+
+@dataclass
+class CheckResult:
+    url: str
+    status: str
+    http_code: int | None
+    response_time_ms: float | None
+    attempts: int
+    checked_at: str
+    error: str | None = None
+
+
+# ─────────────────────────────────────────────
+# HTTP Check
+# ─────────────────────────────────────────────
+
+async def check_target(
+    session: aiohttp.ClientSession,
+    url: str,
+) -> CheckResult:
+
+    last_error = None
+
+    for attempt in range(1, RETRIES + 2):
+
+        start = time.perf_counter()
+
+        try:
+            async with session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=TIMEOUT),
+            ) as response:
+
+                elapsed = (time.perf_counter() - start) * 1000
+
+                if 200 <= response.status < 400:
+                    status = "ONLINE"
+                else:
+                    status = "ERROR"
+
+                return CheckResult(
+                    url=url,
+                    status=status,
+                    http_code=response.status,
+                    response_time_ms=round(elapsed, 2),
+                    attempts=attempt,
+                    checked_at=datetime.now(
+                        timezone.utc
+                    ).isoformat(),
+                )
+
+        except Exception as exc:
+            last_error = str(exc)
+
+            if attempt <= RETRIES:
+                await asyncio.sleep(0.5)
+
+    return CheckResult(
+        url=url,
+        status="OFFLINE",
+        http_code=None,
+        response_time_ms=None,
+        attempts=RETRIES + 1,
+        checked_at=datetime.now(
+            timezone.utc
+        ).isoformat(),
+        error=last_error,
+    )
+
+
+# ─────────────────────────────────────────────
+# Scanner
+# ─────────────────────────────────────────────
+
+async def scan(targets: List[str]) -> List[CheckResult]:
+
+    connector = aiohttp.TCPConnector(
+        limit=20,
+        ssl=False,
+    )
+
+    async with aiohttp.ClientSession(
+        connector=connector,
+        headers={
+            "User-Agent": "NEXO/1.0"
+        },
+    ) as session:
+
+        tasks = [
+            check_target(session, url)
+            for url in targets
+        ]
+
+        return await asyncio.gather(*tasks)
+
+
+# ─────────────────────────────────────────────
+# Output
+# ─────────────────────────────────────────────
+
+def print_results(results: List[CheckResult]):
+
+    print("\n" + "=" * 64)
+    print("NEXO // NETWORK MONITOR")
+    print("=" * 64)
+
+    for result in results:
+
+        if result.status == "ONLINE":
+            indicator = "[+]"
+        else:
+            indicator = "[-]"
+
+        latency = (
+            f"{result.response_time_ms} ms"
+            if result.response_time_ms is not None
+            else "N/A"
+        )
+
+        code = (
+            str(result.http_code)
+            if result.http_code is not None
+            else "N/A"
+        )
+
+        print(
+            f"{indicator} "
+            f"{result.url:<32} "
+            f"{result.status:<8} "
+            f"HTTP {code:<4} "
+            f"{latency}"
+        )
+
+    print("=" * 64)
+
+    online = sum(
+        r.status == "ONLINE"
+        for r in results
+    )
+
+    print(
+        f"STATUS: {online}/{len(results)} targets online"
+    )
+
+    print("=" * 64 + "\n")
+
+
+def save_report(results: List[CheckResult]):
+
+    report = {
+        "project": "NEXO",
+        "version": "1.0.0",
+        "generated_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
+        "total_targets": len(results),
+        "online": sum(
+            r.status == "ONLINE"
+            for r in results
+        ),
+        "results": [
+            asdict(result)
+            for result in results
+        ],
+    }
+
+    with open(
+        REPORT_FILE,
+        "w",
+        encoding="utf-8",
+    ) as file:
+
+        json.dump(
+            report,
+            file,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+
+# ─────────────────────────────────────────────
+# Entry Point
+# ─────────────────────────────────────────────
+
+async def main():
+
+    print("\nStarting NEXO...\n")
+
+    results = await scan(TARGETS)
+
+    print_results(results)
+
+    save_report(results)
+
+    print(
+        f"Report saved to: {REPORT_FILE}"
+    )
+
+
+if __name__ == "__main__":
+
+    try:
+        asyncio.run(main())
+
+    except KeyboardInterrupt:
+
+        print(
+            "\nNEXO stopped by user."
+        )
